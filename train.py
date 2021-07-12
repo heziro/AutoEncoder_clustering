@@ -71,10 +71,12 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer, batch
 
 
 def init_mu(model, train_loader, device):
+    model.to(device)
     features = None
     for i, data in enumerate(train_loader, 0):
         inputs, labels = data[0].to(device), data[1].to(device)
         model.eval()
+        # model.to(device)
         x, q, latent, p = model(inputs)
         if features is None:
             features = latent.cpu().detach().numpy()
@@ -102,22 +104,23 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     clusters = np.array([])
     model.train()
     history = []
+    model.to(device)
     for epoch in range(epochs):
         for i, data in enumerate(train_loader, 0):
             inputs, labels = data[0].to(device), data[1].to(device)
             optimizer.zero_grad()
             x, q, latent, p = model(inputs)
-            all_points.append(latent.detach().numpy())
-            clusters = np.append(clusters, labels[0].numpy())
+            all_points.append(latent.cpu().detach().numpy())
+            clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
             rec_loss = rec_criterion(x, inputs)
-            clustering_loss = kl_loss(target(q), q)
+            clustering_loss = kl_loss(model.calc_p(q), q) / batch_size
             total_loss = rec_loss + gamma * clustering_loss
             total_loss.backward()
             optimizer.step()
 
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                        float(total_loss), float(rec_loss), float(clustering_loss)))
+                                                   float(total_loss), float(rec_loss), float(clustering_loss*gamma)))
         history.append((epoch, inputs, x), )
 
 
@@ -160,7 +163,7 @@ def target(out_distr):
 
 
 def kl_loss(p, q):
-    return -1.0 * nn.KLDivLoss(reduction='mean')(p, q)
+    return -1.0*nn.KLDivLoss(reduction='sum')(p, q)
     # return -1.0 * torch.sum(torch.sum(p*torch.log(p/q), dim=1), dim=0)
 
 
@@ -170,11 +173,11 @@ if __name__ == "__main__":
     rec_criterion = nn.MSELoss()
     cluster_criterion = nn.MSELoss()
     batch_size = 64
-    epochs = 201
+    epochs = 20
     pretrained_epochs = 20
     gamma = 0.1
     small_trainset = False
-    n_samples = 4096
+    n_samples = -1
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
