@@ -137,6 +137,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     model.eval()
     test_iter = iter(test_loader)
     images, labels = test_iter.next()
+    model.to(device)
     outputs = model(images)
 
     plt.figure(figsize=(15, 15))
