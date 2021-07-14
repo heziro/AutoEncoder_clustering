@@ -36,6 +36,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
                vis=False, device='cpu', save=False, path=None):
     history = []
 
+    save = True
     # model = models.Autoencoder()
 
     optimizer_pre = optim.Adam(model.parameters(), lr=1e-3)
@@ -47,7 +48,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
             inputs, labels = data[0].to(device), data[1].to(device)
 
             optimizer_pre.zero_grad()
-            x, q, latent, p = model(inputs)
+            x, q, latent = model(inputs)
             # x = model(inputs)
             # plt.imshow(inputs.detach().numpy()[0].reshape(28,28,1)); plt.show()
             # plt.imshow(x.detach().numpy()[0].reshape(28,28,1)); plt.show()
@@ -79,7 +80,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         plt.show()
 
     if save:
-        torch.save(model.state_dict(), path)
+        torch.save(model.state_dict(), "/content/artifact/model_"+str(epoch)+'.pth')
 
     return model
 
@@ -96,10 +97,10 @@ def init_mu(model, train_loader, device):
             features = latent.cpu().detach().numpy()
         else:
             features = np.concatenate((features, latent.cpu().detach().numpy()), 0)
-    km = KMeans(n_clusters=model.n_clusters, n_init=20)
+    km = KMeans(n_clusters=model.num_clusters, n_init=20)
     km.fit_predict(features)
     mu = torch.from_numpy(km.cluster_centers_)
-    model.cluster_layer.set_mu(mu.to(device))
+    model.clustering.set_mu(mu.to(device))
 
     model.train()
     return model
@@ -144,6 +145,9 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 acc = utils.metrics.acc(labels, preds)
                 print('NMI: {0:.5f}\tARI: {1:.5f}\tAcc {2:.5f}\n'.format(nmi, ari, acc))
 
+                print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
+                                                   float(total_loss), float(rec_loss), float(clustering_loss*gamma)))
+
                 # check stop criterion
                 delta_label = np.sum(preds != preds_prev).astype(np.float32) / preds.shape[0]
                 preds_prev = np.copy(preds)
@@ -167,7 +171,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
 
                 rec_loss = rec_criterion(x, inputs)
                 # clustering_loss = kl_loss(p, q)
-                clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist)
+                clustering_loss = gamma * (cluster_criterion(torch.log(q), tar_dist) / batch_size)
                 total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
@@ -226,9 +230,10 @@ def kl_loss(p, q):
 
 if __name__ == "__main__":
     model = models.ClusterAutoEncoder(input_shape=(28, 28, 1), n_clusters=10, dim=10)
+    model = models.CAE_3(input_shape=(28, 28, 1))
 
     rec_criterion = nn.MSELoss()
-    cluster_criterion = nn.KLDivLoss(reduction='batchmean')
+    cluster_criterion = nn.KLDivLoss(size_average=False)
     lr = 0.001
     weight_decay = 0.0
     sched_gamma = 0.1
@@ -243,11 +248,11 @@ if __name__ == "__main__":
 
     batch_size = 64
     epochs = 200
-    pretrained_epochs = 300
-    gamma = 0.1
+    pretrained_epochs = 2
+    gamma = 0.2
     small_trainset = False
     n_samples = -1
-    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_27.pth"
+    path = "/content/artifact/model_27.pth"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
@@ -263,4 +268,4 @@ if __name__ == "__main__":
 
     train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
-          pretrain=False, path=path)
+          pretrain=True, path=path)
