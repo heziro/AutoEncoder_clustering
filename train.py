@@ -171,7 +171,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
 
                 rec_loss = rec_criterion(x, inputs)
                 # clustering_loss = kl_loss(p, q)
-                clustering_loss = gamma * (cluster_criterion(torch.log(q), tar_dist) / batch_size)
+                clustering_loss = -1.0* gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
