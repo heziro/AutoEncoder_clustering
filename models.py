@@ -92,10 +92,22 @@ class ClusterAutoEncoder(nn.Module):
 
 
     def calc_p(self, q):
-        p1 = q*q / (torch.sum(q, dim=0))
-        p2 = torch.sum((q*q / (torch.sum(q, dim=0))), dim=1)
+        p1 = q**2 / (torch.sum(q, dim=0))
+        p2 = torch.sum((q**2 / (torch.sum(q, dim=0))), dim=1)
         return p1 / p2.unsqueeze(1)
 
+
+    # def forward(self, x):
+    #     x = self.encoder(x)
+    #     x = torch.flatten(x, start_dim=1)
+    #     latent = self.embedding(x)
+    #     q = self.cluster_layer(latent)
+    #     x = self.deembedding(latent)
+    #     x = x.view(-1, 64, 1, 1)
+    #     x = self.decoder(x)
+    #     # clac p
+    #     p = self.calc_p(q)
+    #     return x, q, latent, p
 
     def forward(self, x):
         x = self.encoder(x)
@@ -106,8 +118,8 @@ class ClusterAutoEncoder(nn.Module):
         x = x.view(-1, 64, 1, 1)
         x = self.decoder(x)
         # clac p
-        p = self.calc_p(q)
-        return x, q, latent, p
+        # p = self.calc_p(q)
+        return x, q, latent
 
 
 class Autoencoder(nn.Module):
