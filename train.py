@@ -13,7 +13,6 @@ import utils
 
 
 def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
-
     train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
     test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
 
@@ -59,6 +58,8 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         print('Epoch:{}, Loss:{:.4f}'.format(epoch + 1, float(loss)))
         history.append((epoch, inputs, x), )
 
+        if save:
+            torch.save(model.state_dict(), "/content/artifact/model_" + str(epoch) + '.pth')
     if vis:
         model.eval()
         test_iter = iter(test_loader)
@@ -78,9 +79,6 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
             plt.title("Reconstruct img (pretrained)")
             plt.imshow(rec_img)
         plt.show()
-
-    if save:
-        torch.save(model.state_dict(), "/content/artifact/model_"+str(epoch)+'.pth')
 
     return model
 
@@ -107,7 +105,8 @@ def init_mu(model, train_loader, device):
 
 
 def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
-      scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True, path=None):
+          scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True,
+          path=None):
     model.to(device)
 
     if pretrain:
@@ -145,8 +144,14 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 acc = utils.metrics.acc(labels, preds)
                 print('NMI: {0:.5f}\tARI: {1:.5f}\tAcc {2:.5f}\n'.format(nmi, ari, acc))
 
-                print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                   float(total_loss), float(rec_loss), float(clustering_loss*gamma)))
+                print(
+                    'Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
+                                                                                                             float(
+                                                                                                                 total_loss),
+                                                                                                             float(
+                                                                                                                 rec_loss),
+                                                                                                             float(
+                                                                                                                 clustering_loss * gamma)))
 
                 # check stop criterion
                 delta_label = np.sum(preds != preds_prev).astype(np.float32) / preds.shape[0]
@@ -166,22 +171,25 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
             with torch.set_grad_enabled(True):
 
                 x, q, latent = model(inputs)
-            # all_points.append(latent.cpu().detach().numpy())
-            # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
+                # all_points.append(latent.cpu().detach().numpy())
+                # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
                 rec_loss = rec_criterion(x, inputs)
                 # clustering_loss = kl_loss(p, q)
-                clustering_loss = -1.0* gamma * (cluster_criterion(q, tar_dist) / batch_size)
+                clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
             batch_num = batch_num + 1
 
-
         if finished: break
 
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                   float(total_loss), float(rec_loss), float(clustering_loss*gamma)))
+                                                                                                       float(
+                                                                                                           total_loss),
+                                                                                                       float(rec_loss),
+                                                                                                       float(
+                                                                                                           clustering_loss * gamma)))
         history.append((epoch, inputs, x), )
 
         if vis and epoch % 50 == 0:
@@ -225,7 +233,7 @@ def target(out_distr):
 
 def kl_loss(p, q):
     # return -1.0*nn.KLDivLoss(reduction='sum')(p, q)
-    return -1.0*torch.sum(torch.sum(p*torch.log(p/q), dim=1), dim=0)
+    return -1.0 * torch.sum(torch.sum(p * torch.log(p / q), dim=1), dim=0)
 
 
 if __name__ == "__main__":
@@ -248,8 +256,8 @@ if __name__ == "__main__":
 
     batch_size = 64
     epochs = 200
-    pretrained_epochs = 2
-    gamma = 0.2
+    pretrained_epochs = 300
+    gamma = 0.1
     small_trainset = False
     n_samples = -1
     path = "/content/artifact/model_27.pth"
