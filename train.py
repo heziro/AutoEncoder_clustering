@@ -7,10 +7,12 @@ import torch.nn as nn
 import models
 import torch.optim as optim
 from sklearn.cluster import KMeans
+from torch.optim import lr_scheduler
+import copy
+import utils
 
 
 def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
-
     train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
     test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
 
@@ -29,24 +31,35 @@ def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
     return train_loader, test_loader
 
 
-def pretrained(model, train_loader, test_loader, rec_criterion, optimizer, batch_size, epochs, vis=False, device='cpu'):
+def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size, epochs,
+               vis=False, device='cpu', save=False, path=None):
     history = []
+
+    save = True
+    # model = models.Autoencoder()
+
+    optimizer_pre = optim.Adam(model.parameters(), lr=1e-3)
+    rec_criterion = nn.MSELoss()
     model.train()
+    model.to(device)
     for epoch in range(epochs):
         for i, data in enumerate(train_loader, 0):
             inputs, labels = data[0].to(device), data[1].to(device)
 
-            optimizer.zero_grad()
-            x, q, latent, p = model(inputs)
+            optimizer_pre.zero_grad()
+            x, q, latent = model(inputs)
+            # x = model(inputs)
             # plt.imshow(inputs.detach().numpy()[0].reshape(28,28,1)); plt.show()
             # plt.imshow(x.detach().numpy()[0].reshape(28,28,1)); plt.show()
             loss = rec_criterion(x, inputs)
             loss.backward()
-            optimizer.step()
-
+            optimizer_pre.step()
+        scheduler_pre.step()
         print('Epoch:{}, Loss:{:.4f}'.format(epoch + 1, float(loss)))
         history.append((epoch, inputs, x), )
 
+        if save:
+            torch.save(model.state_dict(), "/content/artifact/model_" + str(epoch) + '.pth')
     if vis:
         model.eval()
         test_iter = iter(test_loader)
@@ -77,26 +90,35 @@ def init_mu(model, train_loader, device):
         inputs, labels = data[0].to(device), data[1].to(device)
         model.eval()
         # model.to(device)
-        x, q, latent, p = model(inputs)
+        x, q, latent = model(inputs)
         if features is None:
             features = latent.cpu().detach().numpy()
         else:
             features = np.concatenate((features, latent.cpu().detach().numpy()), 0)
-    km = KMeans(n_clusters=model.n_clusters, n_init=20)
+    km = KMeans(n_clusters=model.num_clusters, n_init=20)
     km.fit_predict(features)
     mu = torch.from_numpy(km.cluster_centers_)
-    model.cluster_layer.set_mu(mu.to(device))
+    model.clustering.set_mu(mu.to(device))
 
     model.train()
     return model
 
 
-def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, batch_size, epochs, gamma,
-          pretrained_epochs, vis=False, device='cpu'):
+def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
+          scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True,
+          path=None):
     model.to(device)
 
-    model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer, batch_size, pretrained_epochs,
-                       vis=vis, device=device)
+    if pretrain:
+        model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size,
+                           pretrained_epochs, vis=vis, device=device)
+    else:
+        model.load_state_dict(torch.load(path))
+
+    update_interval = 80
+
+    tol = 1e-2
+    finished = False
     # init mu with kmeans
     model = init_mu(model, train_loader, 'cpu')
     total_loss = 0
@@ -105,24 +127,70 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     model.train()
     history = []
     model.to(device)
+
+    output_distribution, labels, preds_prev = utils.calculate_predictions(model, train_loader, device)
+    target_distribution = target(output_distribution)
+
     for epoch in range(epochs):
+        scheduler.step()
+        model.train(True)
+        batch_num = 1
         for i, data in enumerate(train_loader, 0):
+            if (batch_num - 1) % update_interval == 0 and not (batch_num == 1 and epoch == 0):
+                output_distribution, labels, preds = utils.calculate_predictions(model, train_loader, device)
+                target_distribution = target(output_distribution)
+                nmi = utils.metrics.nmi(labels, preds)
+                ari = utils.metrics.ari(labels, preds)
+                acc = utils.metrics.acc(labels, preds)
+                print('NMI: {0:.5f}\tARI: {1:.5f}\tAcc {2:.5f}\n'.format(nmi, ari, acc))
+
+                print(
+                    'Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
+                                                                                                             float(
+                                                                                                                 total_loss),
+                                                                                                             float(
+                                                                                                                 rec_loss),
+                                                                                                             float(
+                                                                                                                 clustering_loss * gamma)))
+
+                # check stop criterion
+                delta_label = np.sum(preds != preds_prev).astype(np.float32) / preds.shape[0]
+                preds_prev = np.copy(preds)
+                if delta_label < tol:
+                    print('Label divergence ' + str(delta_label) + '< tol ' + str(tol))
+                    print('Reached tolerance threshold. Stopping training.')
+                    finished = True
+                    break
+
+            tar_dist = target_distribution[((batch_num - 1) * batch_size):(batch_num * batch_size), :]
+            tar_dist = torch.from_numpy(tar_dist).to(device)
+
             inputs, labels = data[0].to(device), data[1].to(device)
             optimizer.zero_grad()
-            x, q, latent, p = model(inputs)
-            all_points.append(latent.cpu().detach().numpy())
-            clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
-            rec_loss = rec_criterion(x, inputs)
-            clustering_loss = kl_loss(model.calc_p(q), q) / batch_size
-            total_loss = rec_loss + gamma * clustering_loss
-            total_loss.backward()
-            optimizer.step()
+            with torch.set_grad_enabled(True):
+
+                x, q, latent = model(inputs)
+                # all_points.append(latent.cpu().detach().numpy())
+                # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
+
+                rec_loss = rec_criterion(x, inputs)
+                # clustering_loss = kl_loss(p, q)
+                clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
+                total_loss = rec_loss + clustering_loss
+                total_loss.backward()
+                optimizer.step()
+            batch_num = batch_num + 1
+
+        if finished: break
 
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                   float(total_loss), float(rec_loss), float(clustering_loss*gamma)))
+                                                                                                       float(
+                                                                                                           total_loss),
+                                                                                                       float(rec_loss),
+                                                                                                       float(
+                                                                                                           clustering_loss * gamma)))
         history.append((epoch, inputs, x), )
-
 
         if vis and epoch % 50 == 0:
             plt.figure()
@@ -158,27 +226,41 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
 
 
 def target(out_distr):
-    tar_dist = out_distr ** 2 / torch.sum(out_distr, axis=0)
-    tar_dist = torch.transpose(torch.transpose(tar_dist, 0, 1) / torch.sum(tar_dist, axis=1), 0, 1)
+    tar_dist = out_distr ** 2 / np.sum(out_distr, axis=0)
+    tar_dist = np.transpose(np.transpose(tar_dist) / np.sum(tar_dist, axis=1))
     return tar_dist
 
 
 def kl_loss(p, q):
-    return -1.0*nn.KLDivLoss(reduction='sum')(p, q)
-    # return -1.0 * torch.sum(torch.sum(p*torch.log(p/q), dim=1), dim=0)
+    # return -1.0*nn.KLDivLoss(reduction='sum')(p, q)
+    return -1.0 * torch.sum(torch.sum(p * torch.log(p / q), dim=1), dim=0)
 
 
 if __name__ == "__main__":
-    model = models.ClusterAutoEncoder(input_shape=(32, 32, 1), n_clusters=10, dim=10)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    model = models.ClusterAutoEncoder(input_shape=(28, 28, 1), n_clusters=10, dim=10)
+    model = models.CAE_3(input_shape=(28, 28, 1))
+
     rec_criterion = nn.MSELoss()
-    cluster_criterion = nn.MSELoss()
+    cluster_criterion = nn.KLDivLoss(size_average=False)
+    lr = 0.001
+    weight_decay = 0.0
+    sched_gamma = 0.1
+    sched_step = 200
+    # optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
+
+    optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
+    scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
+
     batch_size = 64
-    epochs = 20
-    pretrained_epochs = 20
+    epochs = 200
+    pretrained_epochs = 300
     gamma = 0.1
     small_trainset = False
     n_samples = -1
+    path = "/content/artifact/model_27.pth"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
@@ -192,5 +274,6 @@ if __name__ == "__main__":
     # show images
     # u.imshow(torchvision.utils.make_grid(images))
 
-    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, batch_size, epochs, gamma,
-          pretrained_epochs=pretrained_epochs, vis=vis, device=device)
+    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
+          scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
+          pretrain=True, path=path)
