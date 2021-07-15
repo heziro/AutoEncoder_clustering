@@ -25,8 +25,8 @@ def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
         if n_samples != -1:
             train_set = list(train_set)[:n_samples]
 
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
 
@@ -36,10 +36,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
     history = []
 
     save = True
-    # model = models.Autoencoder()
 
-    optimizer_pre = optim.Adam(model.parameters(), lr=1e-3)
-    rec_criterion = nn.MSELoss()
     model.train()
     model.to(device)
     for epoch in range(epochs):
@@ -48,9 +45,6 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
 
             optimizer_pre.zero_grad()
             x, q, latent = model(inputs)
-            # x = model(inputs)
-            # plt.imshow(inputs.detach().numpy()[0].reshape(28,28,1)); plt.show()
-            # plt.imshow(x.detach().numpy()[0].reshape(28,28,1)); plt.show()
             loss = rec_criterion(x, inputs)
             loss.backward()
             optimizer_pre.step()
@@ -113,13 +107,14 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
         model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size,
                            pretrained_epochs, vis=vis, device=device)
     else:
-        model.load_state_dict(torch.load(path))
+        model.load_state_dict(torch.load(path, map_location=device))
 
     update_interval = 80
 
     tol = 1e-2
     finished = False
     # init mu with kmeans
+    print("init centroids")
     model = init_mu(model, train_loader, 'cpu')
     total_loss = 0
     all_points = []
@@ -128,6 +123,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     history = []
     model.to(device)
 
+    print("calculate prediction")
     output_distribution, labels, preds_prev = utils.calculate_predictions(model, train_loader, device)
     target_distribution = target(output_distribution)
 
@@ -176,7 +172,8 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
 
                 rec_loss = rec_criterion(x, inputs)
                 # clustering_loss = kl_loss(p, q)
-                clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
+                # clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
+                clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
                 total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
@@ -240,7 +237,7 @@ if __name__ == "__main__":
     model = models.ClusterAutoEncoder(input_shape=(28, 28, 1), n_clusters=10, dim=10)
     model = models.CAE_3(input_shape=(28, 28, 1))
 
-    rec_criterion = nn.MSELoss()
+    rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)
     lr = 0.001
     weight_decay = 0.0
@@ -260,7 +257,7 @@ if __name__ == "__main__":
     gamma = 0.1
     small_trainset = False
     n_samples = -1
-    path = "/content/artifact/model_27.pth"
+    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_299.pth"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
@@ -276,4 +273,4 @@ if __name__ == "__main__":
 
     train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
-          pretrain=True, path=path)
+          pretrain=False, path=path)
