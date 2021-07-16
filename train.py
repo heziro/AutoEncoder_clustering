@@ -261,7 +261,7 @@ if __name__ == "__main__":
     gamma = 0.1
     small_trainset = False
     n_samples = -1
-    path = "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_0.pth"
+    path = "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_001.pt"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
