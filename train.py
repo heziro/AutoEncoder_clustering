@@ -59,7 +59,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         history.append((epoch, inputs, x), )
 
         if save:
-            torch.save(model.state_dict(), "/content/artifact/model_" + str(epoch) + '.pth')
+            torch.save(model.state_dict(), "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_" + str(epoch) + '.pth')
     if vis:
         model.eval()
         test_iter = iter(test_loader)
@@ -113,7 +113,9 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
         model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size,
                            pretrained_epochs, vis=vis, device=device)
     else:
-        model.load_state_dict(torch.load(path))
+        print('loading pretrain weight')
+
+        model.load_state_dict(torch.load(path, map_location=device))
 
     update_interval = 80
 
@@ -132,6 +134,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     target_distribution = target(output_distribution)
 
     for epoch in range(epochs):
+        print('Epoch:{}, '.format(epoch + 1))
         scheduler.step()
         model.train(True)
         batch_num = 1
@@ -142,6 +145,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 nmi = utils.metrics.nmi(labels, preds)
                 ari = utils.metrics.ari(labels, preds)
                 acc = utils.metrics.acc(labels, preds)
+                print('Iteration number:', batch_num-1)
                 print('NMI: {0:.5f}\tARI: {1:.5f}\tAcc {2:.5f}\n'.format(nmi, ari, acc))
 
                 print(
@@ -254,13 +258,13 @@ if __name__ == "__main__":
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
     scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
 
-    batch_size = 64
+    batch_size = 256
     epochs = 200
     pretrained_epochs = 300
     gamma = 0.1
     small_trainset = False
     n_samples = -1
-    path = "/content/artifact/model_27.pth"
+    path = "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_0.pth"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
