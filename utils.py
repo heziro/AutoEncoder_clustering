@@ -1,6 +1,9 @@
+from const import *
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn
+import albumentations as A
+import torch
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
 def imshow(img):
@@ -53,3 +56,49 @@ class metrics:
             w[labels_pred[i], labels_true[i]] += 1
         ind = linear_assignment(w.max() - w)
         return sum([w[i, j] for i, j in zip(ind[0], ind[1])]) * 1.0 / labels_pred.size
+
+def tsne_representation(clusters, labels, epoch, is_tensor):
+    tsne  = TSNE()
+    if is_tensor:
+        labels_numpy = labels.detach().numpy()
+        output_np = clusters.detach().numpy()
+    else:
+        labels_numpy = labels
+        output_np = clusters
+    x_embedded = tsne.fit_transform(output_np)
+    ax = sns.scatterplot(x=x_embedded[:, 0], y=x_embedded[:, 1], hue=labels_numpy, legend='full', palette=palette)
+    ax.set_title(f'Epoch: {epoch}')
+    plt.show()
+
+
+def augmentation(data,crop_size):
+    data_list = []
+    transform = A.Compose([A.RandomCrop(width=crop_size, height= crop_size),
+                           A.HorizontalFlip(p=0.5),
+                           A.RandomBrightnessContrast(p=0.2)])
+
+    transform_2 = A.compose([A.augmentations.transforms.Blur(blur_limit=7, always_apply=False, p=0.5),
+                             A.augmentations.transforms.RGBShift(r_shift_limit=20, g_shift_limit=20, b_shift_limit=20,
+                                                                  always_apply=False, p=0.5),
+                             A.augmentations.transforms.GaussNoise(var_limit=(10.0, 50.0), mean=0, per_channel=True,
+                                                                    always_apply=False, p=0.5)])
+
+    transform_3 = A.compose([A.augmentations.transforms.CLAHE (clip_limit=4.0, tile_grid_size=(8, 8),
+                                                               always_apply=False, p=0.5),A.HorizontalFlip(p=0.5)])
+
+    for image in data:
+        transformed = transform(image)['image']
+        data_list.append(transformed)
+        transformed_2 = transform_2(image)['image']
+        data_list.append(transformed_2)
+        transformed_3 = transform_3(image)['image']
+        data_list.append(transformed_3)
+    data_tensor = torch.Tensor(data_list)
+    return data_tensor
+
+
+
+
+
+
+

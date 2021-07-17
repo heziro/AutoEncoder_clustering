@@ -143,7 +143,11 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, la
     output_distribution, labels, preds_prev = utils.calculate_predictions(model, train_loader, device)
     target_distribution = target(output_distribution)
 
+
+
     for epoch in range(epochs):
+        q_epoch_numpy = None
+        labels_epoch_numpy = None
         print('Epoch:{}, '.format(epoch + 1))
         scheduler.step()
         model.train(True)
@@ -200,7 +204,22 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, la
                 total_loss = rec_loss + clustering_loss + loss_labelled
                 total_loss.backward()
                 optimizer.step()
+                q_numpy = q.detach().numpy()
+                labels_numpy = labels.detach().numpy()
+                if q_epoch_numpy is None:
+                    q_epoch_numpy = q_numpy
+                    labels_epoch_numpy = labels_numpy
+                else:
+                    q_epoch_numpy = np.concatenate((q_epoch_numpy, q_numpy), axis = 0)
+                    labels_epoch_numpy = np.concatenate((labels_epoch_numpy, labels_numpy), axis = 0)
+
             batch_num = batch_num + 1
+
+        ##########################################################################
+        #TSNE plot
+        utils.tsne_representation(q_epoch_numpy, labels_epoch_numpy, epoch, False)
+        ##########################################################################
+
 
         if finished: break
 
@@ -262,18 +281,14 @@ def kl_loss(p, q):
 
 
 if __name__ == "__main__":
-    w_img = w_img
-    h_img = h_img
+
     model = models.ClusterAutoEncoder(input_shape=(w_img, h_img, in_channels), n_clusters=10, dim=10)
     model = models.CAE_3(input_shape=(w_img, h_img, in_channels))
 
     rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)
     labelled_criterion = nn.CrossEntropyLoss(size_average=False)
-    lr = lr#0.001
-    weight_decay = weight_decay#0.0
-    sched_gamma = sched_gamma#0.1
-    sched_step = sched_step#200
+
     # optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
@@ -281,13 +296,6 @@ if __name__ == "__main__":
 
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
     scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
-
-    batch_size = batch_size#256
-    epochs = epochs#200
-    pretrained_epochs = pretrained_epochs#300
-    gamma = gamma#0.1
-    small_trainset = small_trainset#False
-    n_samples = n_samples#-1
 
 
     path = "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_001.pt"

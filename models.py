@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import copy
-from const import*
 
 
 # https://xifengguo.github.io/papers/ICONIP17-DCEC.pdf - paper
@@ -105,11 +104,11 @@ class ClusterAutoEncoder(nn.Module):
         return x, q, latent
 
 
-"""class Autoencoder(nn.Module):
+class Autoencoder(nn.Module):
     def __init__(self):
         super(Autoencoder, self).__init__()
         self.encoder = nn.Sequential( # like the Composition layer you built
-            nn.Conv2d(in_channels, 16, 3, stride=2, padding=1, groups=3),
+            nn.Conv2d(1, 16, 3, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(16, 32, 3, stride=2, padding=1),
             nn.ReLU(),
@@ -127,7 +126,7 @@ class ClusterAutoEncoder(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
-        return x"""
+        return x
 
 class ClusterlingLayer(nn.Module):
     def __init__(self, in_features=10, out_features=10, alpha=1.0):
