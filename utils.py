@@ -30,6 +30,15 @@ def calculate_predictions(model, dataloader, device):
     return output_array, label_array, preds
 
 
+def plot_image(plotter, img: np.ndarray):
+    img_shape = img.shape
+    if img_shape[-1] == 1:
+        plotted_img = np.stack((img.squeeze(),)*3, axis=-1)
+    else:
+        plotted_img = img
+    plotter.imshow(plotted_img)
+
+
 class metrics:
     nmi = sklearn.metrics.normalized_mutual_info_score
     ari = sklearn.metrics.adjusted_rand_score

@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import torchvision
 from torchvision import datasets, transforms
 import torchvision.transforms as transforms
 import torch.nn as nn
@@ -8,8 +9,10 @@ import models
 import torch.optim as optim
 from sklearn.cluster import KMeans
 from torch.optim import lr_scheduler
+from const import*
 import copy
 import utils
+
 
 
 def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
@@ -29,6 +32,17 @@ def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
+
+def load_data_cifar(batch_size = 32):
+    transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=batch_size,shuffle=False, num_workers=2)
+    classes = ('plane', 'car', 'bird', 'cat','deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+    return train_loader, test_loader
+
 
 
 def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size, epochs,
@@ -63,12 +77,12 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         plt.figure(figsize=(15, 15))
         n_examples = outputs[0].shape[0]
         for i in range(n_examples):
-            img = images[i].reshape(28, 28, -1).detach().numpy()
+            img = images[i].reshape(w_img, h_img, -1).detach().numpy()
             plt.subplot(n_examples, 2, 2 * i + 1)
             plt.title("Original img (pretrained)")
             plt.imshow(img)
 
-            rec_img = outputs[0][i].reshape(28, 28, -1).detach().numpy()
+            rec_img = outputs[0][i].reshape(w_img, h_img, -1).detach().numpy()
             plt.subplot(n_examples, 2, 2 * i + 2)
             plt.title("Reconstruct img (pretrained)")
             plt.imshow(rec_img)
@@ -98,7 +112,7 @@ def init_mu(model, train_loader, device):
     return model
 
 
-def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
+def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, labelled_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True,
           path=None):
     model.to(device)
@@ -169,6 +183,11 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
             optimizer.zero_grad()
 
             with torch.set_grad_enabled(True):
+                if batch_num > 0 and (batch_num % semisupervised_update_interval) == 0:
+                    _, q, _ = model(inputs)
+                    loss_labelled = labelled_criterion(q, labels) * gamma_labelled_loss
+                else:
+                    loss_labelled = 0
 
                 x, q, latent = model(inputs)
                 # all_points.append(latent.cpu().detach().numpy())
@@ -178,7 +197,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 # clustering_loss = kl_loss(p, q)
                 # clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
-                total_loss = rec_loss + clustering_loss
+                total_loss = rec_loss + clustering_loss + loss_labelled
                 total_loss.backward()
                 optimizer.step()
             batch_num = batch_num + 1
@@ -210,17 +229,22 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
     outputs = model(images)
 
     plt.figure(figsize=(15, 15))
-    n_examples = outputs[0].shape[0]
+    print('num examples ', outputs[0].shape[0])
+    n_examples = min(outputs[0].shape[0], 3)
     for i in range(n_examples):
-        img = images[i].reshape(28, 28, -1).detach().numpy()
+        img = images[i].reshape(w_img, h_img, -1).detach().numpy()
+        #stacked_img = np.stack((img,)*3, axis=-1)
         plt.subplot(n_examples, 2, 2 * i + 1)
         plt.title("Original img")
-        plt.imshow(img)
+        #plt.imshow(stacked_img)
+        utils.plot_image(plt, img)
 
-        rec_img = outputs[0][i].reshape(28, 28, -1).detach().numpy()
+        rec_img = outputs[0][i].reshape(w_img, h_img, -1).detach().numpy()
+        #stacked_img = np.stack((rec_img,)*3, axis=-1)
         plt.subplot(n_examples, 2, 2 * i + 2)
         plt.title("Reconstruct img")
-        plt.imshow(rec_img)
+        #plt.imshow(stacked_img)
+        utils.plot_image(plt, rec_img)
     plt.show()
 
     pass
@@ -238,15 +262,18 @@ def kl_loss(p, q):
 
 
 if __name__ == "__main__":
-    model = models.ClusterAutoEncoder(input_shape=(28, 28, 1), n_clusters=10, dim=10)
-    model = models.CAE_3(input_shape=(28, 28, 1))
+    w_img = w_img
+    h_img = h_img
+    model = models.ClusterAutoEncoder(input_shape=(w_img, h_img, in_channels), n_clusters=10, dim=10)
+    model = models.CAE_3(input_shape=(w_img, h_img, in_channels))
 
     rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)
-    lr = 0.001
-    weight_decay = 0.0
-    sched_gamma = 0.1
-    sched_step = 200
+    labelled_criterion = nn.CrossEntropyLoss(size_average=False)
+    lr = lr#0.001
+    weight_decay = weight_decay#0.0
+    sched_gamma = sched_gamma#0.1
+    sched_step = sched_step#200
     # optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
@@ -255,18 +282,24 @@ if __name__ == "__main__":
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
     scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
 
-    batch_size = 256
-    epochs = 200
-    pretrained_epochs = 300
-    gamma = 0.1
-    small_trainset = False
-    n_samples = -1
+    batch_size = batch_size#256
+    epochs = epochs#200
+    pretrained_epochs = pretrained_epochs#300
+    gamma = gamma#0.1
+    small_trainset = small_trainset#False
+    n_samples = n_samples#-1
+
+
     path = "C:\\Users\\My_pc\\Desktop\\MSc\\project_Into_to_deep\\content\\artifact\\model_001.pt"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
 
-    train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples)
+    dataset = dataset
+    if dataset == "MNIST":
+        train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples)
+    else:
+        train_loader, test_loader = load_data_cifar(batch_size=batch_size)
 
     # get some random training images
     # data_iter = iter(train_loader)
@@ -275,6 +308,6 @@ if __name__ == "__main__":
     # show images
     # u.imshow(torchvision.utils.make_grid(images))
 
-    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
+    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, labelled_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
           pretrain=False, path=path)
