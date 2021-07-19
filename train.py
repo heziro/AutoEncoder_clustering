@@ -12,9 +12,14 @@ import copy
 import utils
 
 
-def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1):
-    train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
-    test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
+def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, dataset_name='mnist'):
+    if dataset_name == 'mnist':
+        train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
+        test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
+
+    elif dataset_name == 'cifar10':
+        train_set = datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor())
+        test_set = datasets.CIFAR10('data', train=False, download=True, transform=transforms.ToTensor())
 
     if small_trainset:
         indices = np.where(train_set.targets == 0)[0][:int(n_samples / 2)]
@@ -53,7 +58,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         history.append((epoch, inputs, x), )
 
         if save:
-            torch.save(model.state_dict(), "/content/artifact/model_" + str(epoch) + '.pth')
+            torch.save(model.state_dict(), path + "/model_" + str(epoch) + '.pth')
     if vis:
         model.eval()
         test_iter = iter(test_loader)
@@ -105,7 +110,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
 
     if pretrain:
         model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size,
-                           pretrained_epochs, vis=vis, device=device)
+                           pretrained_epochs, vis=vis, device=device, path=path)
     else:
         model.load_state_dict(torch.load(path, map_location=device))
 
@@ -179,7 +184,8 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 optimizer.step()
             batch_num = batch_num + 1
 
-        if finished: break
+        if finished:
+            break
 
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
                                                                                                        float(
@@ -234,8 +240,16 @@ def kl_loss(p, q):
 
 
 if __name__ == "__main__":
-    model = models.ClusterAutoEncoder(input_shape=(28, 28, 1), n_clusters=10, dim=10)
-    model = models.CAE_3(input_shape=(28, 28, 1))
+    dataset_name = 'cifar10'
+    if dataset_name == 'cifar10':
+        input_shape = (32, 32, 3)
+    elif dataset_name == 'mnist':
+        input_shape = (28, 28, 1)
+    n_clusters = 10
+    dim = 1000
+    # model = models.ClusterAutoEncoder(input_shape=input_shape, n_clusters=n_clusters, dim=10)
+    model = models.CAE_3(input_shape=(32, 32, 3), dim=dim)
+    # model = CAE_3_for_cifar
 
     rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)
@@ -257,12 +271,14 @@ if __name__ == "__main__":
     gamma = 0.1
     small_trainset = False
     n_samples = -1
-    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_299.pth"
+    pretrain = False
+    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_8.pth"
     vis = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f'device is: {device}')
 
-    train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples)
+    train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples,
+                                          dataset_name=dataset_name)
 
     # get some random training images
     # data_iter = iter(train_loader)
@@ -273,4 +289,4 @@ if __name__ == "__main__":
 
     train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
-          pretrain=False, path=path)
+          pretrain=pretrain, path=path)
