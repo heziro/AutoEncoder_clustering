@@ -4,6 +4,8 @@ import torch
 from torchvision import datasets, transforms
 import torchvision.transforms as transforms
 import torch.nn as nn
+
+import losses
 import models
 import torch.optim as optim
 from sklearn.cluster import KMeans
@@ -58,7 +60,7 @@ def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, s
         history.append((epoch, inputs, x), )
 
         if save:
-            torch.save(model.state_dict(), path + "/model_" + str(epoch) + '.pth')
+            torch.save(model.state_dict(), path + "/model_cifar_" + str(epoch) + '.pth')
     if vis:
         model.eval()
         test_iter = iter(test_loader)
@@ -103,7 +105,7 @@ def init_mu(model, train_loader, device):
     return model
 
 
-def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
+def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, contrastive_criterion, optimizer, optimizer_pre, scheduler,
           scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True,
           path=None):
     model.to(device)
@@ -112,10 +114,12 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
         model = pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size,
                            pretrained_epochs, vis=vis, device=device, path=path)
     else:
-        model.load_state_dict(torch.load(path, map_location=device))
+        model.load_state_dict(torch.load("C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_299.pth",
+                                         map_location=device))
 
     update_interval = 80
 
+    con_gamma = 0.1
     tol = 1e-2
     finished = False
     # init mu with kmeans
@@ -176,10 +180,11 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
                 # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
                 rec_loss = rec_criterion(x, inputs)
+                con_loss = con_gamma * contrastive_criterion(latent, model.clustering.weight[labels])
                 # clustering_loss = kl_loss(p, q)
                 # clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
-                total_loss = rec_loss + clustering_loss
+                total_loss = rec_loss + clustering_loss + con_loss
                 total_loss.backward()
                 optimizer.step()
             batch_num = batch_num + 1
@@ -187,6 +192,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, op
         if finished:
             break
 
+        print("con loss: ", con_loss)
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
                                                                                                        float(
                                                                                                            total_loss),
@@ -240,19 +246,21 @@ def kl_loss(p, q):
 
 
 if __name__ == "__main__":
-    dataset_name = 'cifar10'
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    dataset_name = 'mnist'
     if dataset_name == 'cifar10':
         input_shape = (32, 32, 3)
     elif dataset_name == 'mnist':
         input_shape = (28, 28, 1)
     n_clusters = 10
-    dim = 1000
+    dim = 10
     # model = models.ClusterAutoEncoder(input_shape=input_shape, n_clusters=n_clusters, dim=10)
-    model = models.CAE_3(input_shape=(32, 32, 3), dim=dim)
+    model = models.CAE_3(input_shape=(28, 28, 1), dim=dim)
     # model = CAE_3_for_cifar
 
     rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)
+    contrastive_criterion = losses.ConLoss(device=device)
     lr = 0.001
     weight_decay = 0.0
     sched_gamma = 0.1
@@ -265,16 +273,16 @@ if __name__ == "__main__":
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
     scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
 
-    batch_size = 64
-    epochs = 200
+    batch_size = 256
+    epochs = 50
     pretrained_epochs = 300
     gamma = 0.1
     small_trainset = False
     n_samples = -1
     pretrain = False
-    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_8.pth"
+    path = "C:/Users/heziro/projects/AutoEncoder_clustering/artifact"
     vis = False
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     print(f'device is: {device}')
 
     train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples,
@@ -287,6 +295,6 @@ if __name__ == "__main__":
     # show images
     # u.imshow(torchvision.utils.make_grid(images))
 
-    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, optimizer, optimizer_pre, scheduler,
-          scheduler_pre, batch_size, epochs, gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
+    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, contrastive_criterion, optimizer, optimizer_pre, scheduler,
+          scheduler_pre, batch_size, epochs, gamma=gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
           pretrain=pretrain, path=path)

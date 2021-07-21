@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn
+import torch
 from scipy.optimize import linear_sum_assignment as linear_assignment
 
 def imshow(img):
@@ -13,17 +14,18 @@ def calculate_predictions(model, dataloader, device):
     output_array = None
     label_array = None
     model.eval()
-    for data in dataloader:
-        inputs, labels = data
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        _, outputs, _ = model(inputs)
-        if output_array is not None:
-            output_array = np.concatenate((output_array, outputs.cpu().detach().numpy()), 0)
-            label_array = np.concatenate((label_array, labels.cpu().detach().numpy()), 0)
-        else:
-            output_array = outputs.cpu().detach().numpy()
-            label_array = labels.cpu().detach().numpy()
+    with torch.no_grad():
+        for data in dataloader:
+            inputs, labels = data
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            _, outputs, _ = model(inputs)
+            if output_array is not None:
+                output_array = np.concatenate((output_array, outputs.cpu().detach().numpy()), 0)
+                label_array = np.concatenate((label_array, labels.cpu().detach().numpy()), 0)
+            else:
+                output_array = outputs.cpu().detach().numpy()
+                label_array = labels.cpu().detach().numpy()
 
     preds = np.argmax(output_array.data, axis=1)
     # print(output_array.shape)
