@@ -32,12 +32,12 @@ if __name__ == "__main__":
         dim = 10
     n_clusters = 10
 
-    lr = 0.0001
+    lr = 0.001
     weight_decay = 0.0
     sched_gamma = 0.1
     sched_step = 50
 
-    model = models.CAE_3(input_shape=input_shape, dim=dim)
+    model = models.AutoEncoder(input_shape=input_shape, dim=dim)
 
     rec_criterion = nn.MSELoss(size_average=True)
     cluster_criterion = nn.KLDivLoss(size_average=False)

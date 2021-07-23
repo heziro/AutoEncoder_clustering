@@ -4,6 +4,7 @@ import torch
 from sklearn.cluster import KMeans
 import utils
 
+
 def pretrained(model, train_loader, val_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size, epochs,
                vis=False, device='cpu', save=False, path=None):
     history = []
@@ -89,9 +90,8 @@ def train_supervise(model, train_loader, contrastive_criterion, con_gamma, optim
     return model
 
 
-def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, optimizer, scheduler,batch_size,
+def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, optimizer, scheduler, batch_size,
           epochs, vis, device, pretrain, path, gamma):
-
     update_interval = 80
     tol = 1e-2
     finished = False
@@ -100,7 +100,11 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
     all_points = []
     clusters = np.array([])
     model.train()
-    history = []
+    history = {'epochs': [],
+               'loss': [],
+               'NMI': [],
+               'ARI': [],
+               'Acc': []}
     model.to(device)
 
     print("calculate prediction")
@@ -160,8 +164,7 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                 optimizer.step()
             batch_num = batch_num + 1
 
-        if finished:
-            break
+
 
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
                                                                                                        float(
@@ -169,7 +172,18 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                                                                                                        float(rec_loss),
                                                                                                        float(
                                                                                                            clustering_loss * gamma)))
-        history.append((epoch, inputs, x), )
+        # history.append((epoch, inputs, x), )
+
+        history['epochs'].append(epoch + 1)
+        history['NMI'].append(nmi)
+        history['ARI'].append(ari)
+        history['ACC'].append(acc)
+        history['Total Loss'].append()
+        history['Reconstruction Loss'].append(rec_loss)
+        history['Clustering Loss'].append(clustering_loss * gamma)
+
+        if finished:
+            break
 
         if vis and epoch % 50 == 0:
             plt.figure()
@@ -178,30 +192,30 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
             plt.legend(handles=scatter.legend_elements()[0], labels=[0, 1])
             plt.show()
 
-        all_points = []
-        clusters = np.array([])
+    #     all_points = []
+    #     clusters = np.array([])
+    #
+    # model.eval()
+    # val_iter = iter(val_loader)
+    # images, labels = val_iter.next()
+    # model.to(device)
+    # outputs = model(images)
+    #
+    # plt.figure(figsize=(15, 15))
+    # n_examples = outputs[0].shape[0]
+    # for i in range(n_examples):
+    #     img = images[i].reshape(28, 28, -1).detach().numpy()
+    #     plt.subplot(n_examples, 2, 2 * i + 1)
+    #     plt.title("Original img")
+    #     plt.imshow(img)
+    #
+    #     rec_img = outputs[0][i].reshape(28, 28, -1).detach().numpy()
+    #     plt.subplot(n_examples, 2, 2 * i + 2)
+    #     plt.title("Reconstruct img")
+    #     plt.imshow(rec_img)
+    # plt.show()
 
-    model.eval()
-    val_iter = iter(val_loader)
-    images, labels = val_iter.next()
-    model.to(device)
-    outputs = model(images)
-
-    plt.figure(figsize=(15, 15))
-    n_examples = outputs[0].shape[0]
-    for i in range(n_examples):
-        img = images[i].reshape(28, 28, -1).detach().numpy()
-        plt.subplot(n_examples, 2, 2 * i + 1)
-        plt.title("Original img")
-        plt.imshow(img)
-
-        rec_img = outputs[0][i].reshape(28, 28, -1).detach().numpy()
-        plt.subplot(n_examples, 2, 2 * i + 2)
-        plt.title("Reconstruct img")
-        plt.imshow(rec_img)
-    plt.show()
-
-    pass
+    return history
 
 
 def target(out_distr):

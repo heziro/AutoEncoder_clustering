@@ -17,14 +17,16 @@ import utils
 
 
 def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, dataset_name='mnist',
-              supervised_samples_percent=0., val_split=0.2):
+              supervised_samples_percent=0., val_split=0.2, transform=None):
+    if transform is None:
+        transform=transforms.ToTensor()
     if dataset_name == 'mnist':
-        train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
+        train_set = datasets.MNIST('data', train=True, download=True, transform=transform)
         test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
 
 
     elif dataset_name == 'cifar10':
-        train_set = datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor())
+        train_set = datasets.CIFAR10('data', train=True, download=True, transform=transform)
         test_set = datasets.CIFAR10('data', train=False, download=True, transform=transforms.ToTensor())
 
     if small_trainset:
