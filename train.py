@@ -19,6 +19,8 @@ import utils
 
 
 
+
+
 if __name__ == "__main__":
 
     # params
@@ -35,7 +37,7 @@ if __name__ == "__main__":
     lr = 0.001
     weight_decay = 0.0
     sched_gamma = 0.1
-    sched_step = 50
+    sched_step = 200
 
     model = models.AutoEncoder(input_shape=input_shape, dim=dim)
 
@@ -47,16 +49,16 @@ if __name__ == "__main__":
     scheduler = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
 
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
-    scheduler_pre = lr_scheduler.StepLR(optimizer_pre, step_size=10, gamma=sched_gamma)
+    scheduler_pre = lr_scheduler.StepLR(optimizer_pre, step_size=sched_step, gamma=sched_gamma)
 
     optimizer_sup = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
-    scheduler_sup = lr_scheduler.StepLR(optimizer_sup, step_size=10, gamma=sched_gamma)
+    scheduler_sup = lr_scheduler.StepLR(optimizer_sup, step_size=sched_step, gamma=sched_gamma)
 
     batch_size = 256
     epochs = 50
     pretrained_epochs = 300
     sup_epochs = 30
-    gamma = 1.0
+    gamma = 0.1
     con_gamma = 1
     small_trainset = False
     n_samples = -1

@@ -40,11 +40,11 @@ def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, 
             train_set = list(train_set)[:n_samples]
         supervised_set = list(train_set)[:int(len(train_set) * supervised_samples_percent)]
 
-    # train_set, val_set = torch.utils.data.random_split(train_set, [int(len(train_set) * (1 - val_split)),
-    #                                                                int(len(train_set) * val_split)])
+    train_set, val_set = torch.utils.data.random_split(train_set, [int(len(train_set) * (1 - val_split)),
+                                                                   int(len(train_set) * val_split)])
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
-    val_loader = None
-    # val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=False)
+    # val_loader = None
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size, shuffle=False)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
     supervised_loader = torch.utils.data.DataLoader(supervised_set, batch_size=batch_size, shuffle=True)
 

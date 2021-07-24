@@ -73,7 +73,8 @@ def init_mu(model, train_loader, device):
 
 
 def train_supervise(model, train_loader, contrastive_criterion, con_gamma, optimizer, scheduler, device, epochs):
-    model = model.to(device)
+    model.to(device)
+    model.clustering.weight = model.clustering.weight.to(device)
     for epoch in range(epochs):
         scheduler.step()
         model.train(True)
@@ -92,13 +93,12 @@ def train_supervise(model, train_loader, contrastive_criterion, con_gamma, optim
 
 def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, optimizer, scheduler, batch_size,
           epochs, vis, device, pretrain, path, gamma):
+    model.to(device)
     update_interval = 80
     tol = 1e-2
     finished = False
 
     total_loss = 0
-    all_points = []
-    clusters = np.array([])
     model.train()
     history = {'epochs': [],
                'loss': [],
@@ -107,7 +107,9 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                'ACC': [],
                'Total Loss': [],
                'Reconstruction Loss': [],
-               'Clustering Loss': []
+               'Clustering Loss': [],
+               'Total Loss val': [],
+               'Reconstruction Loss val': []
                }
     model.to(device)
 
@@ -128,15 +130,6 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                 acc = utils.metrics.acc(labels, preds)
                 print('NMI: {0:.5f}\tARI: {1:.5f}\tAcc {2:.5f}\n'.format(nmi, ari, acc))
 
-                # print(
-                #     'Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                #                                                                                              float(
-                #                                                                                                  total_loss),
-                #                                                                                              float(
-                #                                                                                                  rec_loss),
-                #                                                                                              float(
-                #                                                                                                  clustering_loss * gamma)))
-
                 # check stop criterion
                 delta_label = np.sum(preds != preds_prev).astype(np.float32) / preds.shape[0]
                 preds_prev = np.copy(preds)
@@ -155,28 +148,17 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
             with torch.set_grad_enabled(True):
 
                 x, q, latent = model(inputs)
-                # all_points.append(latent.cpu().detach().numpy())
-                # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
                 rec_loss = rec_criterion(x, inputs)
-                # con_loss = con_gamma * contrastive_criterion(latent, model.clustering.weight[labels])
-                # clustering_loss = kl_loss(p, q)
-                # clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
                 total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
             batch_num = batch_num + 1
 
-
-
-
-        print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                                                                       float(
-                                                                                                           total_loss),
-                                                                                                       float(rec_loss),
-                                                                                                       float(
-                                                                                                           clustering_loss * gamma)))
+        print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f},'
+              ' Clustering Loss:{:.4f}'.format(epoch + 1, float(total_loss), float(rec_loss),
+                                               float(clustering_loss * gamma)))
 
         history['epochs'].append(epoch + 1)
         history['NMI'].append(nmi)
@@ -194,20 +176,13 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                     inputs, labels = data[0].to(device), data[1].to(device)
                     x, q, latent = model(inputs)
                     rec_loss_val = rec_criterion(x, inputs)
-                    clustering_loss_val = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
-                    total_loss_val = rec_loss_val + clustering_loss_val
-                print('Epoch:{}, Validation: Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
-                                                                                                             float(
-                                                                                                                 total_loss_val),
-                                                                                                             float(
-                                                                                                                 rec_loss_val),
-                                                                                                             float(
-                                                                                                                 clustering_loss_val * gamma)))
+                    # clustering_loss_val = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
+                    total_loss_val = rec_loss_val
+                print('Epoch:{}, Validation: Total Loss:{:.4f}, '
+                      'Reconstruction Loss:{:.4f}'.format(epoch + 1, float(total_loss_val), float(rec_loss_val)))
 
             history['Total Loss val'].append(total_loss_val)
             history['Reconstruction Loss val'].append(rec_loss_val)
-            history['Clustering Loss val'].append(clustering_loss * gamma_val)
-
 
         if finished:
             break
