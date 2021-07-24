@@ -91,7 +91,7 @@ if __name__ == "__main__":
         # train with labels (contrastive loss)
         model = training.train_supervise(model, supervised_loader, contrastive_criterion, con_gamma, optimizer_sup, scheduler_sup, device, sup_epochs)
 
-    training.train(model=model, train_loader=train_loader, val_loader=val_loader, rec_criterion=rec_criterion,
+    history = training.train(model=model, train_loader=train_loader, val_loader=val_loader, rec_criterion=rec_criterion,
                    cluster_criterion=cluster_criterion, optimizer=optimizer, scheduler=scheduler,
                    batch_size=batch_size, epochs=epochs, vis=vis, device=device, pretrain=pretrain, path=path,
                    gamma=gamma)

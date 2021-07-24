@@ -95,7 +95,7 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
           epochs, vis, device, pretrain, path, gamma):
     model.to(device)
     update_interval = 80
-    tol = 1e-2
+    tol = 1e-4
     finished = False
 
     total_loss = 0
