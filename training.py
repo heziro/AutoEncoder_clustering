@@ -104,7 +104,11 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
                'loss': [],
                'NMI': [],
                'ARI': [],
-               'Acc': []}
+               'ACC': [],
+               'Total Loss': [],
+               'Reconstruction Loss': [],
+               'Clustering Loss': []
+               }
     model.to(device)
 
     print("calculate prediction")
@@ -178,19 +182,19 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
         history['NMI'].append(nmi)
         history['ARI'].append(ari)
         history['ACC'].append(acc)
-        history['Total Loss'].append()
+        history['Total Loss'].append(total_loss)
         history['Reconstruction Loss'].append(rec_loss)
         history['Clustering Loss'].append(clustering_loss * gamma)
 
         if finished:
             break
 
-        if vis and epoch % 50 == 0:
-            plt.figure()
-            all_points = np.array(all_points).reshape(-1, 2)
-            scatter = plt.scatter(all_points[:, 0], all_points[:, 1], c=list(clusters.astype(np.int32)))
-            plt.legend(handles=scatter.legend_elements()[0], labels=[0, 1])
-            plt.show()
+        # if vis and epoch % 50 == 0:
+        #     plt.figure()
+        #     all_points = np.array(all_points).reshape(-1, 2)
+        #     scatter = plt.scatter(all_points[:, 0], all_points[:, 1], c=list(clusters.astype(np.int32)))
+        #     plt.legend(handles=scatter.legend_elements()[0], labels=[0, 1])
+        #     plt.show()
 
     #     all_points = []
     #     clusters = np.array([])
