@@ -14,7 +14,7 @@ class ConLoss(nn.Module):
         d = d / torch.mean(d)
         I = torch.eye(batch_size, device=self.device)
         e = torch.exp(-1.0*d)
-        loss2 = torch.mean(-1.0 * (torch.sum(torch.log(e) * I - torch.log(torch.sum(e, 1)) * I, 0)))
-        # loss = (-1.0 * torch.log(torch.sum(((e*I) / ((torch.sum(e, 1) + 1e-7)[:, None]) + 1e-7), 0))).mean()
-        return loss2
+        # loss2 = torch.mean(-1.0 * (torch.sum(torch.log(e) * I - torch.log(torch.sum(e, 1)) * I, 0)))
+        loss = (-1.0 * torch.log(torch.sum(((e*I) / ((torch.sum(e, 1) + 1e-7)[:, None]) + 1e-7), 0))).mean()
+        return loss
 

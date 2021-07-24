@@ -170,13 +170,13 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
 
 
 
+
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
                                                                                                        float(
                                                                                                            total_loss),
                                                                                                        float(rec_loss),
                                                                                                        float(
                                                                                                            clustering_loss * gamma)))
-        # history.append((epoch, inputs, x), )
 
         history['epochs'].append(epoch + 1)
         history['NMI'].append(nmi)
@@ -186,38 +186,31 @@ def train(model, train_loader, val_loader, rec_criterion, cluster_criterion, opt
         history['Reconstruction Loss'].append(rec_loss)
         history['Clustering Loss'].append(clustering_loss * gamma)
 
+        # validation losses
+        if val_loader is not None:
+            model.eval()
+            with torch.no_grad():
+                for data in val_loader:
+                    inputs, labels = data[0].to(device), data[1].to(device)
+                    x, q, latent = model(inputs)
+                    rec_loss_val = rec_criterion(x, inputs)
+                    clustering_loss_val = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
+                    total_loss_val = rec_loss_val + clustering_loss_val
+                print('Epoch:{}, Validation: Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
+                                                                                                             float(
+                                                                                                                 total_loss_val),
+                                                                                                             float(
+                                                                                                                 rec_loss_val),
+                                                                                                             float(
+                                                                                                                 clustering_loss_val * gamma)))
+
+            history['Total Loss val'].append(total_loss_val)
+            history['Reconstruction Loss val'].append(rec_loss_val)
+            history['Clustering Loss val'].append(clustering_loss * gamma_val)
+
+
         if finished:
             break
-
-        # if vis and epoch % 50 == 0:
-        #     plt.figure()
-        #     all_points = np.array(all_points).reshape(-1, 2)
-        #     scatter = plt.scatter(all_points[:, 0], all_points[:, 1], c=list(clusters.astype(np.int32)))
-        #     plt.legend(handles=scatter.legend_elements()[0], labels=[0, 1])
-        #     plt.show()
-
-    #     all_points = []
-    #     clusters = np.array([])
-    #
-    # model.eval()
-    # val_iter = iter(val_loader)
-    # images, labels = val_iter.next()
-    # model.to(device)
-    # outputs = model(images)
-    #
-    # plt.figure(figsize=(15, 15))
-    # n_examples = outputs[0].shape[0]
-    # for i in range(n_examples):
-    #     img = images[i].reshape(28, 28, -1).detach().numpy()
-    #     plt.subplot(n_examples, 2, 2 * i + 1)
-    #     plt.title("Original img")
-    #     plt.imshow(img)
-    #
-    #     rec_img = outputs[0][i].reshape(28, 28, -1).detach().numpy()
-    #     plt.subplot(n_examples, 2, 2 * i + 2)
-    #     plt.title("Reconstruct img")
-    #     plt.imshow(rec_img)
-    # plt.show()
 
     return history
 
