@@ -10,14 +10,19 @@ import models
 import torch.optim as optim
 from sklearn.cluster import KMeans
 from torch.optim import lr_scheduler
+import training
+import dataset
+
 import copy
 import utils
 
 
-def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, dataset_name='mnist'):
+def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, dataset_name='mnist',
+              supervised_samples_percent=0.05):
     if dataset_name == 'mnist':
         train_set = datasets.MNIST('data', train=True, download=True, transform=transforms.ToTensor())
         test_set = datasets.MNIST('data', train=False, download=True, transform=transforms.ToTensor())
+
 
     elif dataset_name == 'cifar10':
         train_set = datasets.CIFAR10('data', train=True, download=True, transform=transforms.ToTensor())
@@ -28,14 +33,17 @@ def load_data(batch_size=32, num_workers=0, small_trainset=False, n_samples=-1, 
         indices = np.concatenate((indices, torch.where(train_set.targets == 1)[0][:int(n_samples / 2)]))
         # Warp into Subsets and DataLoaders
         train_set = torch.utils.data.Subset(train_set, indices)
+        supervised_set = list(train_set)[:int(len(train_set)*supervised_samples_percent)]
     else:
         if n_samples != -1:
             train_set = list(train_set)[:n_samples]
+        supervised_set = list(train_set)[:int(len(train_set) * supervised_samples_percent)]
 
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+    supervised_loader = torch.utils.data.DataLoader(supervised_set, batch_size=batch_size, shuffle=True)
 
-    return train_loader, test_loader
+    return train_loader, test_loader, supervised_loader
 
 
 def pretrained(model, train_loader, test_loader, rec_criterion, optimizer_pre, scheduler_pre, batch_size, epochs,
@@ -104,10 +112,27 @@ def init_mu(model, train_loader, device):
     model.train()
     return model
 
+def train_supervise(model, train_loader, con_gamma, optimizer, scheduler, device, epochs):
+    for epoch in range(epochs):
+        scheduler.step()
+        model.train(True)
+        for i, data in enumerate(train_loader, 0):
 
-def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, contrastive_criterion, optimizer, optimizer_pre, scheduler,
-          scheduler_pre, batch_size, epochs, gamma, pretrained_epochs, vis=False, device='cpu', pretrain=True,
-          path=None):
+            inputs, labels = data[0].to(device), data[1].to(device)
+            optimizer.zero_grad()
+            with torch.set_grad_enabled(True):
+                x, q, latent = model(inputs)
+                con_loss = contrastive_criterion(latent, model.clustering.weight[labels])
+                total_loss = con_gamma * con_loss
+                total_loss.backward()
+                optimizer.step()
+            print('Epoch:{}, contrastive Loss:{:.4f} '.format(epoch, total_loss))
+    return model
+
+
+def train(model, train_loader, test_loader, supervised_loader, rec_criterion, cluster_criterion, contrastive_criterion,
+          optimizer, optimizer_pre, optimizer_sup, scheduler, scheduler_pre, scheduler_sup, batch_size, epochs, gamma,
+          pretrained_epochs, sup_epochs, vis=False, device='cpu', pretrain=True, path=None):
     model.to(device)
 
     if pretrain:
@@ -117,14 +142,19 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, co
         model.load_state_dict(torch.load("C:/Users/heziro/projects/AutoEncoder_clustering/artifact/model_299.pth",
                                          map_location=device))
 
-    update_interval = 80
-
-    con_gamma = 0.1
-    tol = 1e-2
-    finished = False
     # init mu with kmeans
     print("init centroids")
     model = init_mu(model, train_loader, 'cpu')
+
+    # train with labels (contrastive loss)
+    con_gamma = 1
+    model = train_supervise(model, supervised_loader, con_gamma, optimizer_sup, scheduler_sup, device, sup_epochs)
+
+    update_interval = 80
+
+    tol = 1e-2
+    finished = False
+
     total_loss = 0
     all_points = []
     clusters = np.array([])
@@ -180,11 +210,11 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, co
                 # clusters = np.append(clusters, labels[0].cpu().detach().numpy())
 
                 rec_loss = rec_criterion(x, inputs)
-                con_loss = con_gamma * contrastive_criterion(latent, model.clustering.weight[labels])
+                # con_loss = con_gamma * contrastive_criterion(latent, model.clustering.weight[labels])
                 # clustering_loss = kl_loss(p, q)
                 # clustering_loss = -1.0 * gamma * (cluster_criterion(q, tar_dist) / batch_size)
                 clustering_loss = gamma * cluster_criterion(torch.log(q), tar_dist) / batch_size
-                total_loss = rec_loss + clustering_loss + con_loss
+                total_loss = rec_loss + clustering_loss
                 total_loss.backward()
                 optimizer.step()
             batch_num = batch_num + 1
@@ -192,7 +222,7 @@ def train(model, train_loader, test_loader, rec_criterion, cluster_criterion, co
         if finished:
             break
 
-        print("con loss: ", con_loss)
+
         print('Epoch:{}, Total Loss:{:.4f}, Reconstruction Loss:{:.4f}, Clustering Loss:{:.4f}'.format(epoch + 1,
                                                                                                        float(
                                                                                                            total_loss),
@@ -271,11 +301,15 @@ if __name__ == "__main__":
     scheduler = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
 
     optimizer_pre = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
-    scheduler_pre = lr_scheduler.StepLR(optimizer, step_size=sched_step, gamma=sched_gamma)
+    scheduler_pre = lr_scheduler.StepLR(optimizer_pre, step_size=sched_step, gamma=sched_gamma)
+
+    optimizer_sup = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=weight_decay)
+    scheduler_sup = lr_scheduler.StepLR(optimizer_sup, step_size=sched_step, gamma=sched_gamma)
 
     batch_size = 256
     epochs = 50
     pretrained_epochs = 300
+    sup_epochs = 20
     gamma = 0.1
     small_trainset = False
     n_samples = -1
@@ -285,8 +319,8 @@ if __name__ == "__main__":
 
     print(f'device is: {device}')
 
-    train_loader, test_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples,
-                                          dataset_name=dataset_name)
+    train_loader, test_loader, supervised_loader = load_data(batch_size=batch_size, small_trainset=small_trainset, n_samples=n_samples,
+                                          dataset_name=dataset_name, supervised_samples_percent=0.01)
 
     # get some random training images
     # data_iter = iter(train_loader)
@@ -295,6 +329,7 @@ if __name__ == "__main__":
     # show images
     # u.imshow(torchvision.utils.make_grid(images))
 
-    train(model, train_loader, test_loader, rec_criterion, cluster_criterion, contrastive_criterion, optimizer, optimizer_pre, scheduler,
-          scheduler_pre, batch_size, epochs, gamma=gamma, pretrained_epochs=pretrained_epochs, vis=vis, device=device,
+    train(model, train_loader, test_loader, supervised_loader, rec_criterion, cluster_criterion, contrastive_criterion,
+          optimizer, optimizer_pre, optimizer_sup, scheduler, scheduler_pre, scheduler_sup, batch_size, epochs, gamma=gamma,
+          pretrained_epochs=pretrained_epochs, sup_epochs=sup_epochs, vis=vis, device=device,
           pretrain=pretrain, path=path)
